@@ -207,10 +207,10 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-add_executable(controller src/controller.cpp)
-target_link_libraries(controller 
+add_executable(car_controller src/controller.cpp)
+target_link_libraries(car_controller 
   ${catkin_LIBRARIES}
   pigpiod_if2
 )
-add_dependencies(controller ${car_controller_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} pigpiod_if2)
+add_dependencies(car_controller ${car_controller_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} pigpiod_if2)
 
