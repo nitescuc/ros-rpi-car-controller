@@ -1,14 +1,15 @@
 #include "ros/ros.h"
-#include "geometry_msgs/Twist.h"
+#include "std_msgs/Float64.h"
 #include "sensor_msgs/Joy.h"
 
-ros::Publisher drive_publisher, pilot_publisher, *crt_publisher;
+ros::Publisher steering_publisher, manual_throttle_publisher, pilot_throttle_publisher, *crt_throttle_publisher;
 int steering_axe = 0, throttle_axe = 1, mode_button = 0;
 int remote_mode = 0, pilot_mode = 0;
 double attenuation = 0.8;
 double steering = 0.0, throttle = 0.0;
 
-void publish(ros::Publisher *publisher, double steering, double throttle);
+void publish_throttle(ros::Publisher *publisher, double throttle);
+void publish_steering(double steering);
 
 bool isAutoSteering() { return pilot_mode == 1; }
 bool isAutoThrottle() { return pilot_mode == 1 &&  remote_mode == 1; }
@@ -20,9 +21,9 @@ void setConfiguration(int in_pilot_mode, int in_remote_mode)
     remote_mode = in_remote_mode;
     if (isAutoThrottle())
     {
-        crt_publisher = &pilot_publisher;
+        crt_throttle_publisher = &pilot_throttle_publisher;
     } else {
-        crt_publisher = &drive_publisher;
+        crt_throttle_publisher = &manual_throttle_publisher;
     }
 }
 
@@ -37,12 +38,13 @@ void remote_callback(const sensor_msgs::Joy joy)
         {
             throttle = throttle * attenuation;
         }
+        publish_throttle(&manual_throttle_publisher, throttle);
     }
     if (! isAutoSteering()) 
     {
         steering = joy.axes[steering_axe];
 
-        publish(crt_publisher, steering, throttle);
+        publish_steering(steering);
     } 
 }
 
@@ -52,21 +54,29 @@ void pilot_callback(const sensor_msgs::Joy joy)
     if (isAutoSteering()) 
     {
         steering = joy.axes[steering_axe];
-        if (isAutoThrottle())
-        {
-            throttle = joy.axes[throttle_axe];
-        }
-        publish(crt_publisher, steering, throttle);
+        publish_steering(steering);
+    }
+    if (isAutoThrottle())
+    {
+        throttle = joy.axes[throttle_axe];
+        publish_throttle(&pilot_throttle_publisher, throttle);
     }
 }
 
-void publish(ros::Publisher *publisher, double steering, double throttle)
+void publish_throttle(ros::Publisher *publisher, double throttle)
 {
-    geometry_msgs::Twist drive;
-    drive.angular.z = steering;
-    drive.linear.x = throttle;
+    std_msgs::Float64 drive;
+    drive.data = throttle;
     
     publisher->publish(drive);
+}
+
+void publish_steering(double steering)
+{
+    std_msgs::Float64 drive;
+    drive.data = steering;
+    
+    steering_publisher.publish(drive);
 }
 
 int main(int argc, char** argv)
@@ -81,8 +91,9 @@ int main(int argc, char** argv)
     pH.param("buttons/mode", mode_button, 0);
     pH.param("attenuation", attenuation, 0.8);
 
-    drive_publisher = n.advertise<geometry_msgs::Twist>("/actuator/drive", 1);
-    pilot_publisher = n.advertise<geometry_msgs::Twist>("/actuator/pilot", 1);
+    manual_throttle_publisher = n.advertise<std_msgs::Float64>("/actuator/throttle", 1);
+    pilot_throttle_publisher = n.advertise<std_msgs::Float64>("/actuator/auto_throttle", 1);
+    steering_publisher = n.advertise<std_msgs::Float64>("/actuator/steering", 1);
 
     // Subscribe to /actuator/drive
     ros::Subscriber remote = n.subscribe("/remote", 1, remote_callback);   
