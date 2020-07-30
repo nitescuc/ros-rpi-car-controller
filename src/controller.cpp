@@ -1,8 +1,9 @@
 #include "ros/ros.h"
 #include "std_msgs/Float64.h"
+#include "std_msgs/Bool.h"
 #include "sensor_msgs/Joy.h"
 
-ros::Publisher steering_publisher, manual_throttle_publisher, pilot_throttle_publisher, *crt_throttle_publisher;
+ros::Publisher steering_publisher, pid_enable_publisher, manual_throttle_publisher, pilot_throttle_publisher, *crt_throttle_publisher;
 int steering_axe = 0, throttle_axe = 1, mode_button = 0;
 int remote_mode = 0, pilot_mode = 0;
 double attenuation = 0.8;
@@ -15,8 +16,18 @@ bool isAutoSteering() { return pilot_mode == 1; }
 bool isAutoThrottle() { return pilot_mode == 1 &&  remote_mode == 1; }
 bool isThrottleAttenuated() { return remote_mode != 1; }
 
+void enable_pid(bool enabled)
+{
+    std_msgs::Bool msgs;
+    msgs.data = enabled;
+
+    pid_enable_publisher.publish(msgs);
+}
+
 void setConfiguration(int in_pilot_mode, int in_remote_mode)
 {
+    bool change_pilot_mode = (pilot_mode != in_pilot_mode);
+    bool change_remote_mode = (remote_mode != in_remote_mode);
     pilot_mode = in_pilot_mode;
     remote_mode = in_remote_mode;
     if (isAutoThrottle())
@@ -25,6 +36,7 @@ void setConfiguration(int in_pilot_mode, int in_remote_mode)
     } else {
         crt_throttle_publisher = &manual_throttle_publisher;
     }
+    if (change_pilot_mode || change_remote_mode) enable_pid(isAutoThrottle());
 }
 
 // actuators callback
@@ -94,10 +106,13 @@ int main(int argc, char** argv)
     manual_throttle_publisher = n.advertise<std_msgs::Float64>("/actuator/throttle", 1);
     pilot_throttle_publisher = n.advertise<std_msgs::Float64>("/actuator/auto_throttle", 1);
     steering_publisher = n.advertise<std_msgs::Float64>("/actuator/steering", 1);
+    pid_enable_publisher = n.advertise<std_msgs::Bool>("/pid_enable", 1);
 
     // Subscribe to /actuator/drive
     ros::Subscriber remote = n.subscribe("/remote", 1, remote_callback);   
     ros::Subscriber pilot = n.subscribe("/pilot", 1, pilot_callback);
+
+    enable_pid(false);
 
     // Handle ROS communication events
     ros::spin();
