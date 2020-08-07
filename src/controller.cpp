@@ -2,19 +2,21 @@
 #include "std_msgs/Float64.h"
 #include "std_msgs/Bool.h"
 #include "sensor_msgs/Joy.h"
+#include "car_actuators/Stop.h"
 
 ros::Publisher steering_publisher, pid_enable_publisher, manual_throttle_publisher, pilot_throttle_publisher, *crt_throttle_publisher;
 int steering_axe = 0, throttle_axe = 1, mode_button = 0;
 int remote_mode = 0, pilot_mode = 0;
 double attenuation = 0.8;
 double steering = 0.0, throttle = 0.0;
+ros::ServiceClient stop_client;
 
 void publish_throttle(ros::Publisher *publisher, double throttle);
 void publish_steering(double steering);
 
 bool isAutoSteering() { return pilot_mode == 1; }
 bool isAutoThrottle() { return pilot_mode == 1 &&  remote_mode == 1; }
-bool isThrottleAttenuated() { return remote_mode != 1; }
+bool activatePID() { return remote_mode == 1; }
 
 void enable_pid(bool enabled)
 {
@@ -26,17 +28,26 @@ void enable_pid(bool enabled)
 
 void setConfiguration(int in_pilot_mode, int in_remote_mode)
 {
+    car_actuators::Stop stop_req;
     bool change_pilot_mode = (pilot_mode != in_pilot_mode);
     bool change_remote_mode = (remote_mode != in_remote_mode);
     pilot_mode = in_pilot_mode;
     remote_mode = in_remote_mode;
-    if (isAutoThrottle())
+    if (isAutoThrottle() || activatePID())
     {
         crt_throttle_publisher = &pilot_throttle_publisher;
     } else {
         crt_throttle_publisher = &manual_throttle_publisher;
     }
-    if (change_pilot_mode || change_remote_mode) enable_pid(isAutoThrottle());
+    if (change_pilot_mode || change_remote_mode) 
+    {
+        enable_pid(activatePID());
+        if (!isAutoThrottle() && isAutoSteering())
+        {
+            stop_req.request.stop = true;
+            stop_client.call(stop_req);
+        }
+    }
 }
 
 // actuators callback
@@ -46,16 +57,11 @@ void remote_callback(const sensor_msgs::Joy joy)
     if (! isAutoThrottle())
     {
         throttle = joy.axes[throttle_axe];
-        if (isThrottleAttenuated())
-        {
-            throttle = throttle * attenuation;
-        }
-        publish_throttle(&manual_throttle_publisher, throttle);
+        publish_throttle(crt_throttle_publisher, throttle);
     }
     if (! isAutoSteering()) 
     {
         steering = joy.axes[steering_axe];
-
         publish_steering(steering);
     } 
 }
